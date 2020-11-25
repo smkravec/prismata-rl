@@ -1,15 +1,6 @@
 import numpy as np
 import sys
-import gym
-import gym_prismata
 
-def get_gym_env_info(env_name):
-    env = gym.make(env_name)
-    obs_shape = env.observation_space.shape
-    num_obs = int(np.product(obs_shape))
-    num_actions = env.action_space_dim
-    #num_actions=4
-    return num_actions, obs_shape, num_obs
 
 def gae(rewards, values, episode_ends, gamma, lam):
     """Compute generalized advantage estimate.

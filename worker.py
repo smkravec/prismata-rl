@@ -136,7 +136,9 @@ class SubprocWorker:
             
     def start(self,t):
         self.env = gym.make(self.args.env_name)
-        obs, legal = self.env.reset()
+        if __debug__:
+            print('Initializing...')
+        obs, legal = self.env.reset(policy=self.args.policy, cards=self.args.cards)
         #obs = self.env.reset()
         #legal = np.ones(self.num_actions)
         self.shared_obs[self.index, t] = obs
@@ -161,7 +163,7 @@ class SubprocWorker:
             info["final_episode_rewards"] = self.episode_rewards
             if __debug__:
                 print('Game over, resetting environment')
-            obs, legal = self.env.reset()
+            obs, legal = self.env.reset(policy=self.args.policy, cards=self.args.cards)
             #obs = self.env.reset()
             #legal = np.ones(self.num_actions)
 

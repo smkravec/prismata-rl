@@ -10,7 +10,7 @@ import torch
 from model import MLPBase, D2RLNet, Discrete
 from train import train_step
 from worker import GamePlayer
-from utils import get_gym_env_info, gae
+from utils import gae
 from reward_norm import RunningMeanStd, apply_normalizer
 from tracker import WandBTracker, ConsoleTracker
 
@@ -25,7 +25,7 @@ parser.add_argument('--value_loss_coef', default=.5, type=float)
 parser.add_argument('--entropy_coef', default=.01, type=float)
 parser.add_argument('--num_workers', default=8, type=int)
 parser.add_argument('--num_iterations', default=10**10, type=int)
-parser.add_argument('--num_steps', default=1024, type=int)
+parser.add_argument('--num_steps', default=2048, type=int)
 parser.add_argument('--ppo_epochs', default=4, type=int)
 parser.add_argument('--num_batches', default=4, type=int)
 parser.add_argument('--lr', default=2.5e-4, type=float)
@@ -33,12 +33,23 @@ parser.add_argument('--device', default="cuda:0" if torch.cuda.is_available() el
 parser.add_argument('--end_on_life_loss', default=False)
 parser.add_argument('--clip_rewards', default=False)
 parser.add_argument('--logger', default="console")
+parser.add_argument('--policy', default="Random")
+parser.add_argument('--cards', default="4")
 args = parser.parse_args()
 
 args.batch_size = int(args.num_workers / args.num_batches)
 
-args.num_actions, args.obs_shape, args.num_obs = \
-    get_gym_env_info(args.env_name)
+if args.cards=="4":
+    args.num_actions=14
+    args.obs_shape=(30,)
+    args.num_obs = 30
+elif args.cards=="11":
+    args.num_actions=32
+    args.obs_shape=(82,)
+    args.num_obs = 82
+else:
+    raise NameError('Cards Not Accepted')
+
 
 device = torch.device(args.device)
 
