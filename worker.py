@@ -12,12 +12,13 @@ from torchvision import transforms
 import traceback
 from sys import exc_info
 
-from reward_norm import apply_normalizer
+from utils import apply_normalizer
 class GamePlayer:
     """A manager class for running multiple game-playing processes."""
     def __init__(self, args, shared_obs, shared_legals):
         self.episode_length = deque(maxlen=100)
         self.episode_rewards = deque(maxlen=100)
+        self.episode_winners = deque(maxlen=100)
 
         # Start game-playing processes
         self.processes = []
@@ -87,6 +88,7 @@ class GamePlayer:
                 try:
                     self.episode_length.append(info['final_episode_length'])
                     self.episode_rewards.append(info['final_episode_rewards'])
+                    self.episode_winners.append(info['final_episode_winner'])
                 except KeyError:
                     pass
                 
@@ -149,7 +151,7 @@ class SubprocWorker:
         """Perform a single step of the environment."""
         info = {}
         step_reward = 0
-        obs, legal, reward, done = self.env.step(action)
+        obs, legal, reward, done, winner = self.env.step(action)
         #obs, reward, done, _ = self.env.step(action)
         #legal=np.ones(self.num_actions)
         self.episode_rewards += reward
@@ -161,6 +163,7 @@ class SubprocWorker:
             done=True
             info["final_episode_length"] = self.episode_steps
             info["final_episode_rewards"] = self.episode_rewards
+            info["final_episode_winner"] = winner
             if __debug__:
                 print('Game over, resetting environment')
             obs, legal = self.env.reset(policy=self.args.policy, cards=self.args.cards)

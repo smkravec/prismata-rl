@@ -3,6 +3,7 @@ import argparse
 import ctypes
 import multiprocessing as mp
 import pickle
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -10,10 +11,9 @@ import torch
 from model import MLPBase, D2RLNet, Discrete
 from train import train_step
 from worker import GamePlayer
-from utils import gae
-from reward_norm import RunningMeanStd, apply_normalizer
+from utils import gae, RunningMeanStd, apply_normalizer
 from tracker import WandBTracker, ConsoleTracker
-
+start_time=datetime.now()
 parser = argparse.ArgumentParser()
 parser.add_argument('--name')
 parser.add_argument('--env_name', default="PrismataEnv-v0")
@@ -30,11 +30,14 @@ parser.add_argument('--ppo_epochs', default=4, type=int)
 parser.add_argument('--num_batches', default=4, type=int)
 parser.add_argument('--lr', default=2.5e-4, type=float)
 parser.add_argument('--device', default="cuda:0" if torch.cuda.is_available() else "cpu")
-parser.add_argument('--end_on_life_loss', default=False)
 parser.add_argument('--clip_rewards', default=False)
 parser.add_argument('--logger', default="console")
 parser.add_argument('--policy', default="Random")
 parser.add_argument('--cards', default="4")
+parser.add_argument('--model_dir', default=".")
+parser.add_argument('--load_model_dir', default=None)
+parser.add_argument('--hidden_dim', default=64)
+parser.add_argument('--num_layers', default=4)
 args = parser.parse_args()
 
 args.batch_size = int(args.num_workers / args.num_batches)
@@ -50,14 +53,14 @@ elif args.cards=="11":
 else:
     raise NameError('Cards Not Accepted')
 
-
+runid=f"trainedpolicy{args.policy}_net{args.model}_cards{args.cards}_time{start_time}"
+    
 device = torch.device(args.device)
 
 # Define common shapes for convenience
 scalar_shape = (args.num_workers, args.num_steps)
 batch_obs_shape = (args.num_workers, args.num_steps, args.num_obs)
 batch_legals_shape = (args.num_workers, args.num_steps, args.num_actions)
-args.steps_to_skip = 1
 
 
 # Make a shared array to get observations / legals from each process
@@ -88,13 +91,18 @@ game_player = GamePlayer(args, shared_obs, shared_legals)
 
 dist = Discrete(args.num_actions)
 if args.model == "mlp":
-    model = MLPBase(args.num_obs, args.num_actions, dist).to(device)
+    model = MLPBase(args.num_obs, args.num_actions, dist, args.hidden_dim)
 elif args.model == "d2rl":
-    model= D2RLNet(args.num_obs, args.num_actions, dist).to(device)
+    model= D2RLNet(args.num_obs, args.num_actions, dist, args.hidden_dim, args.num_layers)
 optim = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+if args.load_model_dir!=None:
+    model.load_state_dict(torch.load(f'{args.load_model_dir}/model.h5'))
+    
+model.to(device)
+
 reward_normalizer = RunningMeanStd(shape=())
-obs_normalizer = RunningMeanStd(shape=(args.num_obs, ))
+obs_normalizer = RunningMeanStd(shape=(args.num_obs, ), path=args.load_model_dir)
 
 # Main loop
 i = 0  
@@ -146,6 +154,8 @@ for i in range(args.num_iterations):
                               game_player.episode_length, i)
         tracker.add_histogram("episode/episode_rewards",
                               game_player.episode_rewards, i)
+        tracker.add_histogram("episode/episode_winners",
+                              game_player.episode_winners, i)
     if i % 25 == 0:
         tracker.add_histogram("training/raw_advantages",
                               raw_advantages, i)
@@ -157,7 +167,7 @@ for i in range(args.num_iterations):
                               np.sqrt(reward_normalizer.var), i)
             
     if i%100==0:
-        torch.save(model.state_dict(), f"model_{i}.h5")
-        np.save(f"mean_{i}", obs_normalizer.mean)
-        np.save(f"var_{i}", obs_normalizer.var)
+        torch.save(model.state_dict(), f"{args.model_dir}/{i}_model_{runid}.h5")
+        np.save(f"{args.model_dir}/{i}_mean_{runid}", obs_normalizer.mean)
+        np.save(f"{args.model_dir}/{i}_var_{runid}", obs_normalizer.var)
         
