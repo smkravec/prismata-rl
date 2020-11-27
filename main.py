@@ -32,12 +32,15 @@ parser.add_argument('--lr', default=2.5e-4, type=float)
 parser.add_argument('--device', default="cuda:0" if torch.cuda.is_available() else "cpu")
 parser.add_argument('--clip_rewards', default=False)
 parser.add_argument('--logger', default="console")
-parser.add_argument('--policy', default="Random")
+parser.add_argument('--policy', default="RandomAI")
 parser.add_argument('--cards', default="4")
 parser.add_argument('--model_dir', default=".")
 parser.add_argument('--load_model_dir', default=None)
-parser.add_argument('--hidden_dim', default=64)
-parser.add_argument('--num_layers', default=4)
+parser.add_argument('--hidden_dim', default=64, type=int)
+parser.add_argument('--num_layers', default=4, type=int)
+parser.add_argument('--max_grad_norm', default=.5, type=float)
+parser.add_argument('--model_save_interval', default=100, type=int)
+parser.add_argument('--memory_profiler', default=False, type=bool)
 args = parser.parse_args()
 
 args.batch_size = int(args.num_workers / args.num_batches)
@@ -166,7 +169,7 @@ for i in range(args.num_iterations):
         tracker.add_histogram("training/reward_std",
                               np.sqrt(reward_normalizer.var), i)
             
-    if i%100==0:
+    if i%args.model_save_interval==0:
         torch.save(model.state_dict(), f"{args.model_dir}/{i}_model_{runid}.h5")
         np.save(f"{args.model_dir}/{i}_mean_{runid}", obs_normalizer.mean)
         np.save(f"{args.model_dir}/{i}_var_{runid}", obs_normalizer.var)

@@ -38,7 +38,7 @@ def train_step(model, optim, batch_data, args, i, tracker):
 
     loss = ppo_loss + args.value_loss_coef * value_loss - args.entropy_coef * entropy_loss
     loss.backward()
-    torch.nn.utils.clip_grad_norm_(model.parameters(), .5)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
     optim.step()
 
     if i % 5 == 0:

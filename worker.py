@@ -11,6 +11,8 @@ from torchvision import transforms
 
 import traceback
 from sys import exc_info
+from sys import path
+from guppy import hpy
 
 from utils import apply_normalizer
 class GamePlayer:
@@ -34,6 +36,8 @@ class GamePlayer:
                     policy_probs, actions, model, obs_normalizer, device,
                     episode_ends,i):
         model.eval()
+        if args.memory_profiler:
+            print(hpy().heap())
         # Start with the actions selected at the end of the previous iteration
         #step_actions = actions[:, -1]
         # Same with obs and legals
@@ -60,9 +64,14 @@ class GamePlayer:
             legals=torch.tensor(legals).float()
             #print(f"{i} {legals}")
             probs=probs.detach().cpu()
+            if __debug__:
+                print(probs)
             probs=torch.mul(probs,legals)
             probs_sum=torch.sum(probs, dim=1)
             probs = torch.einsum('ij,i->ij', probs , 1/probs_sum)
+            if __debug__:
+                print('Renormalized probs')
+                print(probs)
             dist = torch.distributions.Categorical(probs=probs)
             
             # Sample actions from the policy distribution
