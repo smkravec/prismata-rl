@@ -2,8 +2,9 @@
 import argparse
 import ctypes
 import multiprocessing as mp
-import pickle
+import pickle, json
 from datetime import datetime
+import prismataengine
 
 import numpy as np
 import torch
@@ -41,7 +42,12 @@ parser.add_argument('--num_layers', default=4, type=int)
 parser.add_argument('--max_grad_norm', default=.5, type=float)
 parser.add_argument('--model_save_interval', default=100, type=int)
 parser.add_argument('--memory_profiler', default=False, type=bool)
+parser.add_argument('--player', default='p1')
+parser.add_argument('--nn_opponent', default=None)
 args = parser.parse_args()
+if args.nn_opponent:
+    with open(args.nn_opponent) as f:
+        args.nn_opponent = json.load(f)
 
 args.batch_size = int(args.num_workers / args.num_batches)
 
@@ -54,9 +60,14 @@ elif args.cards=="11":
     args.obs_shape=(82,)
     args.num_obs = 82
 else:
-    raise NameError('Cards Not Accepted')
+    raise ValueError('Cards Not Accepted')
 
-runid=f"trainedpolicy{args.policy}_net{args.model}_cards{args.cards}_time{start_time}"
+
+if args.player not in ['p1','p2']:
+    raise ValueError('Player mode not recognized')
+
+    
+runid=f"trainedpolicy{args.policy}_net{args.model}_cards{args.cards}_player{args.player}_time{start_time}"
     
 device = torch.device(args.device)
 
@@ -86,7 +97,9 @@ actions = np.zeros(scalar_shape, dtype=np.int32)
 
 # Build the key classes
 if args.logger == "wandb":
-    tracker = WandBTracker(args.name, args)
+    init_args = args
+    init_args.AbstractAction = "\n".join([f"{k}: {v}" for k, v in prismataengine.AbstractAction.values.items()])
+    tracker = WandBTracker(args.name, init_args)
 else:
     tracker = ConsoleTracker(args.name, args)
     
@@ -97,10 +110,12 @@ if args.model == "mlp":
     model = MLPBase(args.num_obs, args.num_actions, dist, args.hidden_dim)
 elif args.model == "d2rl":
     model= D2RLNet(args.num_obs, args.num_actions, dist, args.hidden_dim, args.num_layers)
+else:
+    raise ValueError('Model Not Supported')
 optim = torch.optim.Adam(model.parameters(), lr=args.lr)
 
 if args.load_model_dir!=None:
-    model.load_state_dict(torch.load(f'{args.load_model_dir}/model.h5'))
+    model.load_state_dict(torch.load(f'{args.load_model_dir}/model.h5', map_location=torch.device(args.device)))
     
 model.to(device)
 
@@ -110,6 +125,8 @@ obs_normalizer = RunningMeanStd(shape=(args.num_obs, ), path=args.load_model_dir
 # Main loop
 i = 0  
 for i in range(args.num_iterations):
+    if i!=0 and i%10==0:
+        game_player.reset(args, shared_obs, shared_legals) #Attempt at hacky workaround to C memory leak
     # Run num_steps of the game in each worker and accumulate results in
     # the data arrays
     game_player.run_rollout(args, shared_obs, shared_legals, rewards, discounted_rewards,

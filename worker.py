@@ -1,4 +1,4 @@
-"""Environment Parallelization from https://github.com/zplizzi/pytorch-ppo"""
+"""Environment Parallelization based on https://github.com/zplizzi/pytorch-ppo"""
 
 from collections import deque
 import multiprocessing as mp
@@ -7,14 +7,16 @@ import gym, gym_prismata
 import numpy as np
 import torch
 import sys
-from torchvision import transforms
 
 import traceback
 from sys import exc_info
 from sys import path
-from guppy import hpy
+# from guppy import hpy
 
 from utils import apply_normalizer
+
+from NN_opponent import NN_opponent
+
 class GamePlayer:
     """A manager class for running multiple game-playing processes."""
     def __init__(self, args, shared_obs, shared_legals):
@@ -30,14 +32,31 @@ class GamePlayer:
             ps = mp.Process(target=worker.run)
             ps.start()
             self.processes.append((ps, parent_conn))
+            
+    def reset(self,args,shared_obs, shared_legals):
+        for j, (p, pipe) in enumerate(self.processes):
+            p.terminate()
+        self.episode_length = deque(maxlen=100)
+        self.episode_rewards = deque(maxlen=100)
+        self.episode_winners = deque(maxlen=100)
+
+        # Start game-playing processes
+        self.processes = []
+        for i in range(args.num_workers):
+            parent_conn, child_conn = mp.Pipe()
+            worker = SubprocWorker(i, child_conn, args, shared_obs, shared_legals)
+            ps = mp.Process(target=worker.run)
+            ps.start()
+            self.processes.append((ps, parent_conn))
+        
 
 
     def run_rollout(self, args, shared_obs, shared_legals, rewards, discounted_rewards, values,
                     policy_probs, actions, model, obs_normalizer, device,
-                    episode_ends,i):
+                    episode_ends, i):
         model.eval()
-        if args.memory_profiler:
-            print(hpy().heap())
+        # if args.memory_profiler:
+        #     print(hpy().heap())
         # Start with the actions selected at the end of the previous iteration
         #step_actions = actions[:, -1]
         # Same with obs and legals
@@ -62,7 +81,6 @@ class GamePlayer:
             step_values, probs = model(obs_torch)
             #select only legal actions and renormalize
             legals=torch.tensor(legals).float()
-            #print(f"{i} {legals}")
             probs=probs.detach().cpu()
             if __debug__:
                 print(probs)
@@ -118,7 +136,6 @@ class SubprocWorker:
         #self.env.reset()
         
 
-
     def run(self):
         """The worker entrypoint, will wait for commands from the main
         process and execute them."""
@@ -149,7 +166,11 @@ class SubprocWorker:
         self.env = gym.make(self.args.env_name)
         if __debug__:
             print('Initializing...')
-        obs, legal = self.env.reset(policy=self.args.policy, cards=self.args.cards)
+        if self.args.policy == 'NN_opponent':
+            policy = NN_opponent(**self.args.nn_opponent)
+        else:
+            policy = self.args.policy
+        obs, legal = self.env.reset(policy=policy, cards=self.args.cards, NN_player=self.args.player)
         #obs = self.env.reset()
         #legal = np.ones(self.num_actions)
         self.shared_obs[self.index, t] = obs
@@ -165,9 +186,10 @@ class SubprocWorker:
         #legal=np.ones(self.num_actions)
         self.episode_rewards += reward
         step_reward += reward
-        if self.episode_rewards>10000:
-            print(self.episode_rewards)
-            print(self.episode_steps)
+        if __debug__:
+            if self.episode_rewards>10000:
+                print(self.episode_rewards)
+                print(self.episode_steps)
         if done or t==self.args.num_steps-1:
             done=True
             info["final_episode_length"] = self.episode_steps
@@ -175,7 +197,11 @@ class SubprocWorker:
             info["final_episode_winner"] = winner
             if __debug__:
                 print('Game over, resetting environment')
-            obs, legal = self.env.reset(policy=self.args.policy, cards=self.args.cards)
+            if self.args.policy == 'NN_opponent':
+                policy = NN_opponent(**self.args.nn_opponent)
+            else:
+                policy = self.args.policy
+            obs, legal = self.env.reset(policy=policy, cards=self.args.cards, NN_player=self.args.player)
             #obs = self.env.reset()
             #legal = np.ones(self.num_actions)
 
