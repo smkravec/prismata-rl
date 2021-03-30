@@ -6,9 +6,8 @@ Current best agent: Beats MediumAI from the game after minimal training in bases
 Easy to extend, more features and benchmarking coming soon
 
 TO-DO:
-*Self-Play
-*Better annotation of state/action space
-*Different statespace representations
-*Benchmarks and trained models
-*Curiosity module
+*Self-Play league system
+*Documentation
+*Fix NaN with D2RL
 *More unit game modes
+*Expand MCTS variants
