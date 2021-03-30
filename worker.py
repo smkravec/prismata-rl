@@ -11,7 +11,6 @@ import sys
 import traceback
 from sys import exc_info
 from sys import path
-# from guppy import hpy
 
 from utils import apply_normalizer
 
@@ -20,9 +19,9 @@ from NN_opponent import NN_opponent
 class GamePlayer:
     """A manager class for running multiple game-playing processes."""
     def __init__(self, args, shared_obs, shared_legals):
-        self.episode_length = deque(maxlen=100)
-        self.episode_rewards = deque(maxlen=100)
-        self.episode_winners = deque(maxlen=100)
+        self.episode_length = deque(maxlen=args.num_steps)
+        self.episode_rewards = deque(maxlen=args.num_steps)
+        self.episode_winners = deque(maxlen=args.num_steps)
 
         # Start game-playing processes
         self.processes = []
@@ -36,9 +35,10 @@ class GamePlayer:
     def reset(self,args,shared_obs, shared_legals):
         for j, (p, pipe) in enumerate(self.processes):
             p.terminate()
-        self.episode_length = deque(maxlen=100)
-        self.episode_rewards = deque(maxlen=100)
-        self.episode_winners = deque(maxlen=100)
+        self.episode_length = deque(maxlen=args.num_steps)
+        self.episode_rewards = deque(maxlen=args.num_steps)
+        self.episode_winners = deque(maxlen=args.num_steps)
+
 
         # Start game-playing processes
         self.processes = []
@@ -55,13 +55,6 @@ class GamePlayer:
                     policy_probs, actions, model, obs_normalizer, device,
                     episode_ends, i):
         model.eval()
-        # if args.memory_profiler:
-        #     print(hpy().heap())
-        # Start with the actions selected at the end of the previous iteration
-        #step_actions = actions[:, -1]
-        # Same with obs and legals
-        #shared_obs[:, 0] = shared_obs[:, -1]
-        #shared_legals[:, 0] = shared_legals[:, -1]
 
         for step in range(args.num_steps):
             if step==0: #Initialize the very first environments and obtain initial state
@@ -71,25 +64,19 @@ class GamePlayer:
                     _ = pipe.recv()
             obs = shared_obs[:, step]
             legals = shared_legals[:, step]
-                       
-            if len(obs.shape) == 2:
+            if obs_normalizer is not None:
                 obs = apply_normalizer(obs, obs_normalizer)
                 shared_obs[:, step] = obs
-
+            
             # run the model
             obs_torch = torch.tensor(obs).to(device).float()
             step_values, probs = model(obs_torch)
             #select only legal actions and renormalize
             legals=torch.tensor(legals).float()
             probs=probs.detach().cpu()
-            if __debug__:
-                print(probs)
             probs=torch.mul(probs,legals)
             probs_sum=torch.sum(probs, dim=1)
             probs = torch.einsum('ij,i->ij', probs , 1/probs_sum)
-            if __debug__:
-                print('Renormalized probs')
-                print(probs)
             dist = torch.distributions.Categorical(probs=probs)
             
             # Sample actions from the policy distribution
@@ -130,11 +117,7 @@ class SubprocWorker:
         self.disc_ep_rewards = 0
         self.args = args
         self.shared_obs = shared_obs
-        self.shared_legals = shared_legals
-        #self.num_actions=4
-        #self.env = gym.make(self.args.env_name)
-        #self.env.reset()
-        
+        self.shared_legals = shared_legals        
 
     def run(self):
         """The worker entrypoint, will wait for commands from the main
@@ -170,7 +153,7 @@ class SubprocWorker:
             policy = NN_opponent(**self.args.nn_opponent)
         else:
             policy = self.args.policy
-        obs, legal = self.env.reset(policy=policy, cards=self.args.cards, NN_player=self.args.player)
+        obs, legal = self.env.reset(policy=policy, cards=self.args.cards, NN_player=self.args.player, one_hot = self.args.one_hot)
         #obs = self.env.reset()
         #legal = np.ones(self.num_actions)
         self.shared_obs[self.index, t] = obs
@@ -182,8 +165,6 @@ class SubprocWorker:
         info = {}
         step_reward = 0
         obs, legal, reward, done, winner = self.env.step(action)
-        #obs, reward, done, _ = self.env.step(action)
-        #legal=np.ones(self.num_actions)
         self.episode_rewards += reward
         step_reward += reward
         if __debug__:
@@ -201,9 +182,7 @@ class SubprocWorker:
                 policy = NN_opponent(**self.args.nn_opponent)
             else:
                 policy = self.args.policy
-            obs, legal = self.env.reset(policy=policy, cards=self.args.cards, NN_player=self.args.player)
-            #obs = self.env.reset()
-            #legal = np.ones(self.num_actions)
+            obs, legal = self.env.reset(policy=policy, cards=self.args.cards, NN_player=self.args.player, one_hot = self.args.one_hot)
 
             self.episode_steps = 0
             self.episode_rewards = 0

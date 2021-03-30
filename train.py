@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import pdb
 
 def train_step(model, optim, batch_data, args, i, tracker):
     
@@ -10,10 +11,11 @@ def train_step(model, optim, batch_data, args, i, tracker):
 
     values_new, probs_new = model(obs)
     values_new = values_new.flatten()
-
     probs_new=torch.mul(probs_new, legals)
     probs_sum = torch.sum(probs_new, dim=1)
     probs_new=torch.einsum('ij,i->ij', probs_new , 1/probs_sum)
+    if torch.isnan(probs_new).any():
+        pdb.set_trace()
     
     dist_new = torch.distributions.Categorical(probs=probs_new)
     selected_prob_new = dist_new.log_prob(actions)

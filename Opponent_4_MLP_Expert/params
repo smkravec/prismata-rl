@@ -1,6 +1,0 @@
-{
-    "model_dir": "/home/celestia/Documents/AlphaMata/PPO_Parallel/Opponent",
-    "model_type": "mlp",
-    "cards": 4,
-    "hidden_dim": 64
-}

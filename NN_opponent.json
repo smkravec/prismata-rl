@@ -1,0 +1,9 @@
+{
+	"model_dir": "./MediumAI_11_MLP_Start",
+	"model_type": "mlp",
+	"cards": "11",
+	"hidden_dim": 256,
+	"num_layers": 4,
+    "player": "p1",
+    "one_hot": "True"
+}

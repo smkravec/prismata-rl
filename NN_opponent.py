@@ -2,26 +2,45 @@ import torch
 from torch.distributions.categorical import Categorical
 from model import MLPBase, D2RLNet, Discrete
 import numpy as np
+import prismataengine as p
 
-class NN_opponent:
-    def __init__(self, model_dir=None, model_type='mlp', cards=4, hidden_dim=64, num_layers=4):
+class NN_opponent(p.PrismataPlayerPython):
+    def __init__(self, model_dir=None, model_type='mlp', cards='4', hidden_dim=64, num_layers=4 , player='p2', one_hot = False):
+        if player=='p1':
+            self.player= p.Players.One
+        elif player=='p2':
+            self.player= p.Players.Two
+        else:
+            raise ValueError('Player Not Accepted, use p1 or p2')
+        super().__init__(self.player)
         self.hidden_dim=hidden_dim
         self.num_layers=num_layers
         self.cards= cards
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        #self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device="cpu" # CUDA is giving me an error declaring this second network, fix later
         self.model_dir=model_dir
-        
-        if self.cards==4:
-            self.num_actions=14
-            self.obs_shape=(30,)
-            self.num_obs = 30
-        elif self.cards==11:
-            self.num_actions=32
-            self.obs_shape=(82,)
-            self.num_obs = 82
+        if one_hot == "True":
+            self.one_hot = True
+        elif one_hot == "False":
+            self.one_hot = False
         else:
-            raise ValueError('Cards Not Accepted')
-            
+            raise ValueError('OneHot truth value not parseable')
+        
+        if self.cards=="4":
+            self.num_actions=14
+            if self.one_hot:
+                self.num_obs=670
+            else:
+                self.num_obs = 30
+        elif self.cards=="11":
+            self.num_actions=32
+            if self.one_hot:
+                self.num_obs=1242
+            else:
+                self.num_obs = 82
+        else:
+            raise ValueError('Cards Not Accepted. Currently implemented: 4 and 11')
+
         self.dist = Discrete(self.num_actions)
         
         if model_type == "mlp":
@@ -29,19 +48,23 @@ class NN_opponent:
         elif args.model == "d2rl":
             self.model= D2RLNet(self.num_obs, self.num_actions, self.dist, self.hidden_dim, self.num_layers)
         else:
-            raise ValueError('Model Not Supported')
+            raise ValueError('Model Not Supported. Currently implemented: mlp and d2rl')
         
         self.model.load_state_dict(torch.load(f'{self.model_dir}/model.h5', map_location=torch.device(self.device)))
         self.model.to(self.device)
         
-        self.mean = np.load(f"{self.model_dir}/mean.npy")
-        self.var = np.load(f"{self.model_dir}/var.npy")
+        if not self.one_hot: #Assuming Obs_norm is off in onehot mode
+            self.mean = np.load(f"{self.model_dir}/mean.npy")
+            self.var = np.load(f"{self.model_dir}/var.npy")
     
     def getAction(self, gamestate):
         obs, legal, done = gamestate.toVector(), gamestate.getAbstractActionsVector(), gamestate.isGameOver()
         #Normalize observation
-        obs=obs-self.mean
-        obs= obs / np.sqrt(self.var + 1e-8)
+        if not self.one_hot:
+            obs=obs-self.mean
+            obs= obs / np.sqrt(self.var + 1e-8)
+        else:
+            obs=obs.astype('float16') 
         #get action probabilities
         obs_torch=torch.tensor(obs).to(self.device).float()
         legal=torch.tensor(legal).float()
@@ -57,3 +80,14 @@ class NN_opponent:
         distribution = torch.distributions.Categorical(probs=probs)
         action = distribution.sample().item()
         return action
+    
+    def getMove(self, prismata_gamestate, move):
+        gamestate=p.GameState(prismata_gamestate, cards=int(self.cards), one_hot=self.one_hot)
+        saveActivePlayer = gamestate.activePlayer
+        while gamestate.activePlayer == saveActivePlayer:
+            action_label = self.getAction(gamestate)
+            actionPointer = gamestate.coerceAction(action_label)
+            move.append(p.unsafeIntToAction(actionPointer))
+            gamestate.doAction(action_label)
+            
+        

@@ -1,0 +1,13 @@
+{
+    "whiteMana":"0HH",
+    "blackMana":"0HH",
+    "phase":"action",
+    "table":
+    [
+        {"cardName":"Drone", "color":0, "amount":6},
+        {"cardName":"Engineer", "color":0, "amount":2},
+        {"cardName":"Drone", "color":1, "amount":7},
+        {"cardName":"Engineer", "color":1, "amount":2}
+    ],
+    "cards":["Drone","Engineer","Blastforge","Steelsplitter"]
+}

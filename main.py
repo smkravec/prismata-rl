@@ -4,6 +4,9 @@ import ctypes
 import multiprocessing as mp
 import pickle, json
 from datetime import datetime
+from os import environ
+# Only works with POSIX-style paths
+environ["PRISMATA_INIT_AI_JSON_PATH"] = f"{'/'.join(__file__.split('/')[:-1])}/AI_config.txt"
 import prismataengine
 
 import numpy as np
@@ -24,12 +27,12 @@ parser.add_argument('--lam', default=.95, type=float)
 parser.add_argument('--epsilon', default=.1, type=float)
 parser.add_argument('--value_loss_coef', default=.5, type=float)
 parser.add_argument('--entropy_coef', default=.01, type=float)
-parser.add_argument('--num_workers', default=8, type=int)
+parser.add_argument('--num_workers', default=32, type=int)
 parser.add_argument('--num_iterations', default=10**10, type=int)
 parser.add_argument('--num_steps', default=2048, type=int)
 parser.add_argument('--ppo_epochs', default=4, type=int)
 parser.add_argument('--num_batches', default=4, type=int)
-parser.add_argument('--lr', default=2.5e-4, type=float)
+parser.add_argument('--lr', default=2.5e-5, type=float)
 parser.add_argument('--device', default="cuda:0" if torch.cuda.is_available() else "cpu")
 parser.add_argument('--clip_rewards', default=False)
 parser.add_argument('--logger', default="console")
@@ -37,28 +40,38 @@ parser.add_argument('--policy', default="RandomAI")
 parser.add_argument('--cards', default="4")
 parser.add_argument('--model_dir', default=".")
 parser.add_argument('--load_model_dir', default=None)
-parser.add_argument('--hidden_dim', default=64, type=int)
+parser.add_argument('--hidden_dim', default=256, type=int)
 parser.add_argument('--num_layers', default=4, type=int)
 parser.add_argument('--max_grad_norm', default=.5, type=float)
-parser.add_argument('--model_save_interval', default=100, type=int)
-parser.add_argument('--memory_profiler', default=False, type=bool)
+parser.add_argument('--model_save_interval', default=50, type=int)
+#parser.add_argument('--memory_profiler', default=False, type=bool)
 parser.add_argument('--player', default='p1')
 parser.add_argument('--nn_opponent', default=None)
+parser.add_argument('--one_hot', default=False)
 args = parser.parse_args()
 if args.nn_opponent:
     with open(args.nn_opponent) as f:
         args.nn_opponent = json.load(f)
-
+assert(args.num_workers >= args.num_batches)
 args.batch_size = int(args.num_workers / args.num_batches)
+
+if args.one_hot=='True':
+    args.one_hot=True
+else:
+    args.one_hot=False
 
 if args.cards=="4":
     args.num_actions=14
-    args.obs_shape=(30,)
-    args.num_obs = 30
+    if args.one_hot:
+        args.num_obs=670
+    else:
+        args.num_obs = 30
 elif args.cards=="11":
     args.num_actions=32
-    args.obs_shape=(82,)
-    args.num_obs = 82
+    if args.one_hot:
+        args.num_obs=1242
+    else:
+        args.num_obs = 82
 else:
     raise ValueError('Cards Not Accepted')
 
@@ -67,7 +80,7 @@ if args.player not in ['p1','p2']:
     raise ValueError('Player mode not recognized')
 
     
-runid=f"trainedpolicy{args.policy}_net{args.model}_cards{args.cards}_player{args.player}_time{start_time}"
+runid=f"trainedpolicy{args.policy}_net{args.model}_cards{args.cards}_player{args.player}_onehot{args.one_hot}_time{start_time}"
     
 device = torch.device(args.device)
 
@@ -120,7 +133,10 @@ if args.load_model_dir!=None:
 model.to(device)
 
 reward_normalizer = RunningMeanStd(shape=())
-obs_normalizer = RunningMeanStd(shape=(args.num_obs, ), path=args.load_model_dir)
+if not args.one_hot:
+    obs_normalizer = RunningMeanStd(shape=(args.num_obs, ), path=args.load_model_dir)
+else:
+    obs_normalizer = None
 
 # Main loop
 i = 0  
@@ -165,7 +181,13 @@ for i in range(args.num_iterations):
         
         # Step batch
         for epoch in range(args.ppo_epochs):
-            train_step(model, optim, batch_data, args, i, tracker)
+            try:
+                #with torch.autograd.detect_anomaly():
+                train_step(model, optim, batch_data, args, i, tracker)
+            except Exception as e:
+                import pdb
+                print(e)
+                pdb.set_trace()
         #for reward in rewards:
         #    print(max(reward))
     tracker.log_iteration_time(args.num_workers * args.num_steps, i)
@@ -188,6 +210,7 @@ for i in range(args.num_iterations):
             
     if i%args.model_save_interval==0:
         torch.save(model.state_dict(), f"{args.model_dir}/{i}_model_{runid}.h5")
-        np.save(f"{args.model_dir}/{i}_mean_{runid}", obs_normalizer.mean)
-        np.save(f"{args.model_dir}/{i}_var_{runid}", obs_normalizer.var)
+        if args.obs_norm:
+            np.save(f"{args.model_dir}/{i}_mean_{runid}", obs_normalizer.mean)
+            np.save(f"{args.model_dir}/{i}_var_{runid}", obs_normalizer.var)
         
