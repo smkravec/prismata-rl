@@ -6,13 +6,13 @@ import pickle, json
 from datetime import datetime
 from os import environ
 # Only works with POSIX-style paths
-environ["PRISMATA_INIT_AI_JSON_PATH"] = f"{'/'.join(__file__.split('/')[:-1])}/AI_config.txt"
+#environ["PRISMATA_INIT_AI_JSON_PATH"] = f"{'/'.join(__file__.split('/')[:-1])}/AI_config.txt"
 import prismataengine
 
 import numpy as np
 import torch
 
-from model import MLPBase, D2RLNet, Discrete
+from model import MLPBase, D2RLNet, CategoricalMasked
 from train import train_step
 from worker import GamePlayer
 from utils import gae, RunningMeanStd, apply_normalizer
@@ -27,7 +27,7 @@ parser.add_argument('--lam', default=.95, type=float)
 parser.add_argument('--epsilon', default=.1, type=float)
 parser.add_argument('--value_loss_coef', default=.5, type=float)
 parser.add_argument('--entropy_coef', default=.01, type=float)
-parser.add_argument('--num_workers', default=32, type=int)
+parser.add_argument('--num_workers', default=8, type=int)
 parser.add_argument('--num_iterations', default=10**10, type=int)
 parser.add_argument('--num_steps', default=2048, type=int)
 parser.add_argument('--ppo_epochs', default=4, type=int)
@@ -36,7 +36,7 @@ parser.add_argument('--lr', default=2.5e-5, type=float)
 parser.add_argument('--device', default="cuda:0" if torch.cuda.is_available() else "cpu")
 parser.add_argument('--clip_rewards', default=False)
 parser.add_argument('--logger', default="console")
-parser.add_argument('--policy', default="RandomAI")
+parser.add_argument('--policy', default="Random")
 parser.add_argument('--cards', default="4")
 parser.add_argument('--model_dir', default=".")
 parser.add_argument('--load_model_dir', default=None)
@@ -79,9 +79,9 @@ else:
 if args.player not in ['p1','p2']:
     raise ValueError('Player mode not recognized')
 
-    
+
 runid=f"trainedpolicy{args.policy}_net{args.model}_cards{args.cards}_player{args.player}_onehot{args.one_hot}_time{start_time}"
-    
+
 device = torch.device(args.device)
 
 # Define common shapes for convenience
@@ -115,21 +115,20 @@ if args.logger == "wandb":
     tracker = WandBTracker(args.name, init_args)
 else:
     tracker = ConsoleTracker(args.name, args)
-    
+
 game_player = GamePlayer(args, shared_obs, shared_legals)
 
-dist = Discrete(args.num_actions)
 if args.model == "mlp":
-    model = MLPBase(args.num_obs, args.num_actions, dist, args.hidden_dim)
+    model = MLPBase(args.num_obs, args.num_actions, args.hidden_dim)
 elif args.model == "d2rl":
-    model= D2RLNet(args.num_obs, args.num_actions, dist, args.hidden_dim, args.num_layers)
+    model= D2RLNet(args.num_obs, args.num_actions, args.hidden_dim, args.num_layers)
 else:
     raise ValueError('Model Not Supported')
 optim = torch.optim.Adam(model.parameters(), lr=args.lr)
 
 if args.load_model_dir!=None:
     model.load_state_dict(torch.load(f'{args.load_model_dir}/model.h5', map_location=torch.device(args.device)))
-    
+
 model.to(device)
 
 reward_normalizer = RunningMeanStd(shape=())
@@ -139,7 +138,7 @@ else:
     obs_normalizer = None
 
 # Main loop
-i = 0  
+i = 0
 for i in range(args.num_iterations):
     if i!=0 and i%10==0:
         game_player.reset(args, shared_obs, shared_legals) #Attempt at hacky workaround to C memory leak
@@ -164,7 +163,7 @@ for i in range(args.num_iterations):
     # normalize advantages
     raw_advantages = advantages.copy()
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
-    
+
     # Split the data into batches in the num_workers dimension
     for batch in range(args.num_batches):
         start = batch * args.batch_size
@@ -178,7 +177,7 @@ for i in range(args.num_iterations):
 
         # flatten (batch_size,num_steps,...) into ((batch_size*num_steps,...)
         batch_data = [x.reshape((-1, ) + x.shape[2:]) for x in batch_data]
-        
+
         # Step batch
         for epoch in range(args.ppo_epochs):
             try:
@@ -207,10 +206,9 @@ for i in range(args.num_iterations):
                               observations, i)
         tracker.add_histogram("training/reward_std",
                               np.sqrt(reward_normalizer.var), i)
-            
+
     if i%args.model_save_interval==0:
         torch.save(model.state_dict(), f"{args.model_dir}/{i}_model_{runid}.h5")
         if args.obs_norm:
             np.save(f"{args.model_dir}/{i}_mean_{runid}", obs_normalizer.mean)
             np.save(f"{args.model_dir}/{i}_var_{runid}", obs_normalizer.var)
-        

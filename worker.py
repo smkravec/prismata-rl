@@ -13,6 +13,8 @@ from sys import exc_info
 from sys import path
 
 from utils import apply_normalizer
+from model import CategoricalMasked
+
 
 from NN_opponent import NN_opponent
 
@@ -31,7 +33,7 @@ class GamePlayer:
             ps = mp.Process(target=worker.run)
             ps.start()
             self.processes.append((ps, parent_conn))
-            
+
     def reset(self,args,shared_obs, shared_legals):
         for j, (p, pipe) in enumerate(self.processes):
             p.terminate()
@@ -48,7 +50,7 @@ class GamePlayer:
             ps = mp.Process(target=worker.run)
             ps.start()
             self.processes.append((ps, parent_conn))
-        
+
 
 
     def run_rollout(self, args, shared_obs, shared_legals, rewards, discounted_rewards, values,
@@ -67,18 +69,14 @@ class GamePlayer:
             if obs_normalizer is not None:
                 obs = apply_normalizer(obs, obs_normalizer)
                 shared_obs[:, step] = obs
-            
+
             # run the model
             obs_torch = torch.tensor(obs).to(device).float()
-            step_values, probs = model(obs_torch)
+            step_values, logits = model(obs_torch)
             #select only legal actions and renormalize
-            legals=torch.tensor(legals).float()
-            probs=probs.detach().cpu()
-            probs=torch.mul(probs,legals)
-            probs_sum=torch.sum(probs, dim=1)
-            probs = torch.einsum('ij,i->ij', probs , 1/probs_sum)
-            dist = torch.distributions.Categorical(probs=probs)
-            
+            legals=torch.tensor(legals, dtype=torch.bool).to(device)
+            dist = CategoricalMasked(logits=logits, mask=legals)
+
             # Sample actions from the policy distribution
             step_actions = dist.sample()
             step_policy_probs = dist.log_prob(step_actions)
@@ -88,7 +86,7 @@ class GamePlayer:
             values[:, step] = step_values.detach().cpu().numpy().flatten()
             policy_probs[:, step] = step_policy_probs.detach().cpu().numpy()
             actions[:, step] = step_actions
-            
+
             # Send the selected actions to workers and request a step
             for j, (p, pipe) in enumerate(self.processes):
                 pipe.send(("step", step, step_actions[j]))
@@ -105,7 +103,7 @@ class GamePlayer:
                     self.episode_winners.append(info['final_episode_winner'])
                 except KeyError:
                     pass
-                
+
 class SubprocWorker:
     """A worker for running an environment, intended to be run on a separate
     process."""
@@ -117,7 +115,7 @@ class SubprocWorker:
         self.disc_ep_rewards = 0
         self.args = args
         self.shared_obs = shared_obs
-        self.shared_legals = shared_legals        
+        self.shared_legals = shared_legals
 
     def run(self):
         """The worker entrypoint, will wait for commands from the main
@@ -144,7 +142,7 @@ class SubprocWorker:
             print('worker: got KeyboardInterrupt')
         finally:
             self.env.close()
-            
+
     def start(self,t):
         self.env = gym.make(self.args.env_name)
         if __debug__:
@@ -169,8 +167,7 @@ class SubprocWorker:
         step_reward += reward
         if __debug__:
             if self.episode_rewards>10000:
-                print(self.episode_rewards)
-                print(self.episode_steps)
+                print(f"Episode rewards: {self.episode_rewards} ({self.episode_steps})")
         if done or t==self.args.num_steps-1:
             done=True
             info["final_episode_length"] = self.episode_steps
@@ -203,4 +200,5 @@ class SubprocWorker:
         last_disc_reward = self.disc_ep_rewards
         if done:
             self.disc_ep_rewards = 0
+        print(set_reward, last_disc_reward, done, info)
         return step_reward, last_disc_reward, done, info

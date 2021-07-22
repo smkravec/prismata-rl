@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import pdb
+from model import CategoricalMasked
 
 def train_step(model, optim, batch_data, args, i, tracker):
     
@@ -9,15 +10,10 @@ def train_step(model, optim, batch_data, args, i, tracker):
 
     advantages, rewards_to_go, values, actions, obs, legals, selected_prob = batch_data
 
-    values_new, probs_new = model(obs)
+    values_new, logits_new = model(obs)
     values_new = values_new.flatten()
-    probs_new=torch.mul(probs_new, legals)
-    probs_sum = torch.sum(probs_new, dim=1)
-    probs_new=torch.einsum('ij,i->ij', probs_new , 1/probs_sum)
-    if torch.isnan(probs_new).any():
-        pdb.set_trace()
-    
-    dist_new = torch.distributions.Categorical(probs=probs_new)
+  
+    dist_new = CategoricalMasked(logits=logits_new, mask=legals)
     selected_prob_new = dist_new.log_prob(actions)
 
     # Compute the PPO loss

@@ -1,6 +1,5 @@
 import torch
-from torch.distributions.categorical import Categorical
-from model import MLPBase, D2RLNet, Discrete
+from model import MLPBase, D2RLNet, CategoricalMasked
 import numpy as np
 import prismataengine as p
 
@@ -25,7 +24,7 @@ class NN_opponent(p.PrismataPlayerPython):
             self.one_hot = False
         else:
             raise ValueError('OneHot truth value not parseable')
-        
+
         if self.cards=="4":
             self.num_actions=14
             if self.one_hot:
@@ -41,22 +40,20 @@ class NN_opponent(p.PrismataPlayerPython):
         else:
             raise ValueError('Cards Not Accepted. Currently implemented: 4 and 11')
 
-        self.dist = Discrete(self.num_actions)
-        
         if model_type == "mlp":
-            self.model = MLPBase(self.num_obs, self.num_actions, self.dist, self.hidden_dim)
+            self.model = MLPBase(self.num_obs, self.num_actions, self.hidden_dim)
         elif args.model == "d2rl":
-            self.model= D2RLNet(self.num_obs, self.num_actions, self.dist, self.hidden_dim, self.num_layers)
+            self.model= D2RLNet(self.num_obs, self.num_actions, self.hidden_dim, self.num_layers)
         else:
             raise ValueError('Model Not Supported. Currently implemented: mlp and d2rl')
-        
+
         self.model.load_state_dict(torch.load(f'{self.model_dir}/model.h5', map_location=torch.device(self.device)))
         self.model.to(self.device)
-        
+
         if not self.one_hot: #Assuming Obs_norm is off in onehot mode
             self.mean = np.load(f"{self.model_dir}/mean.npy")
             self.var = np.load(f"{self.model_dir}/var.npy")
-    
+
     def getAction(self, gamestate):
         obs, legal, done = gamestate.toVector(), gamestate.getAbstractActionsVector(), gamestate.isGameOver()
         #Normalize observation
@@ -64,23 +61,19 @@ class NN_opponent(p.PrismataPlayerPython):
             obs=obs-self.mean
             obs= obs / np.sqrt(self.var + 1e-8)
         else:
-            obs=obs.astype('float16') 
+            obs=obs.astype('float16')
         #get action probabilities
         obs_torch=torch.tensor(obs).to(self.device).float()
-        legal=torch.tensor(legal).float()
+        legal=torch.tensor(legal,  dtype=torch.bool).to(self.device)
         obs_torch=torch.reshape(obs_torch, (1,len(obs_torch)))
         legal=torch.reshape(legal,(1,len(legal)))
-        _, probs = self.model(obs_torch)
+        _, logits = self.model(obs_torch)
         #mask illegal actions
-        probs=probs.detach().cpu()
-        probs=torch.mul(probs,legal)
-        probs_sum=torch.sum(probs, dim=1)
-        probs = torch.einsum('ij,i->ij', probs , 1/probs_sum)
         #sample action
-        distribution = torch.distributions.Categorical(probs=probs)
+        distribution = CategoricalMasked(logits=logits, mask=legal)
         action = distribution.sample().item()
         return action
-    
+
     def getMove(self, prismata_gamestate, move):
         gamestate=p.GameState(prismata_gamestate, cards=int(self.cards), one_hot=self.one_hot)
         saveActivePlayer = gamestate.activePlayer
@@ -89,5 +82,3 @@ class NN_opponent(p.PrismataPlayerPython):
             actionPointer = gamestate.coerceAction(action_label)
             move.append(p.unsafeIntToAction(actionPointer))
             gamestate.doAction(action_label)
-            
-        
