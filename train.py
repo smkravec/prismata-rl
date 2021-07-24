@@ -4,7 +4,7 @@ import pdb
 from model import CategoricalMasked
 
 def train_step(model, optim, batch_data, args, i, tracker):
-    
+
     model.train()
     optim.zero_grad()
 
@@ -12,7 +12,8 @@ def train_step(model, optim, batch_data, args, i, tracker):
 
     values_new, logits_new = model(obs)
     values_new = values_new.flatten()
-  
+    legals = torch.tensor(legals, dtype=torch.bool)
+
     dist_new = CategoricalMasked(logits=logits_new, mask=legals)
     selected_prob_new = dist_new.log_prob(actions)
 

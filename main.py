@@ -209,6 +209,6 @@ for i in range(args.num_iterations):
 
     if i%args.model_save_interval==0:
         torch.save(model.state_dict(), f"{args.model_dir}/{i}_model_{runid}.h5")
-        if args.obs_norm:
+        if not args.one_hot:
             np.save(f"{args.model_dir}/{i}_mean_{runid}", obs_normalizer.mean)
             np.save(f"{args.model_dir}/{i}_var_{runid}", obs_normalizer.var)
