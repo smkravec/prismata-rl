@@ -200,5 +200,5 @@ class SubprocWorker:
         last_disc_reward = self.disc_ep_rewards
         if done:
             self.disc_ep_rewards = 0
-        print(step_reward, last_disc_reward, done, info)
+        #print(step_reward, last_disc_reward, done, info)
         return step_reward, last_disc_reward, done, info

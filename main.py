@@ -184,9 +184,9 @@ for i in range(args.num_iterations):
                 #with torch.autograd.detect_anomaly():
                 train_step(model, optim, batch_data, args, i, tracker)
             except Exception as e:
-                import pdb
+                #import pdb
                 print(e)
-                pdb.set_trace()
+                #pdb.set_trace()
         #for reward in rewards:
         #    print(max(reward))
     tracker.log_iteration_time(args.num_workers * args.num_steps, i)
