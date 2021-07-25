@@ -7,6 +7,7 @@ Uses primsataengine and gym-prismata modules
 
 Currently Built:
 - Parallel PPO agent with action masking
+- Basic MLP model as well as a dense net architecture (D2RL)
 - C++ classical alpha-beta and portfolio MCTS opponents for curricula training or benchmarking
 - Capable of loading a neural network opponent for self-play
 - GUI for playing against your own agent / testing performance
@@ -14,5 +15,6 @@ Currently Built:
 TO-DO:
 *Self-Play league system
 *Documentation
+*Code refactor / consolidation
 *More unit game modes
 *Expand MCTS variants
