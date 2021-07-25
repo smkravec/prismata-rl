@@ -1,13 +1,18 @@
 # prismata-rl
-WIP Reinforcement Learning Approach to Prismata
+Prismata Learning Environment
 
-Basic PPO code for training Prismata AIs.
-Current best agent: Beats MediumAI from the game after minimal training in baseset and steelsplitter-only. ExpertAI and above is memory intensive.
-Easy to extend, more features and benchmarking coming soon
+Prismata is a turn-based perfect information strategy game made by Lunarch studios written in C++. It has a rich action space and a combinatorial like state space from the possibility of many different cards, making a good training ground for model based RL and transfer learning experimentation. The performant codebase and non-visual nature of the game make it very resource efficient.
+
+Uses primsataengine and gym-prismata modules
+
+Currently Built:
+- Parallel PPO agent with action masking
+- C++ classical alpha-beta and portfolio MCTS opponents for curricula training or benchmarking
+- Capable of loading a neural network opponent for self-play
+- GUI for playing against your own agent / testing performance
 
 TO-DO:
 *Self-Play league system
 *Documentation
-*Fix NaN with D2RL
 *More unit game modes
 *Expand MCTS variants
