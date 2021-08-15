@@ -15,8 +15,8 @@ class NN_opponent(p.PrismataPlayerPython):
         self.hidden_dim=hidden_dim
         self.num_layers=num_layers
         self.cards= cards
-        #self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.device="cpu" # CUDA is giving me an error declaring this second network, fix later
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        #self.device="cpu" # CUDA is giving me an error declaring this second network, fix later
         self.model_dir=model_dir
         if one_hot == "True":
             self.one_hot = True
